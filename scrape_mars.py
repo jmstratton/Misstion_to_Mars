@@ -1,5 +1,4 @@
 # Dependencies
-import os
 import pandas as pd
 from splinter import Browser
 from bs4 import BeautifulSoup as bs
@@ -8,122 +7,251 @@ import requests
 import pymongo
 import time
 import requests
+import tweepy
 
-# Connect to chromedriver
-def init_browser():
-    
-    executable_path = {'executable_path': '/Users/Jill Stratton/Desktop/chromedriver/chromedriver.exe'}
-    return Browser("chrome", **executable_path, headless=True)
-# Scrapes all websites for Mars data
+# Define Scrape Function
 def scrape():
+
+    print("Begin Scraping")
     
-    # Create a python dictionary to store all data
-    scrape_mars_dict = {}
-    
-    # Use requests and BeautifulSoup to scrape Nasa News for latest news
-    url = 'https://mars.nasa.gov/news/?page=0&per_page=40&order=publish_date+desc%2Ccreated_at+desc&search=&category=19%2C165%2C184%2C204&blank_scope=Latest'
-    response = requests.get(url)
-    soup = bs(response.text, 'lxml')
+# create a dictionaryt to store the data
+scrape_mars_dict = {}
 
-    results = soup.find('div', class_='features')
-    news_title = results.find('div', class_='content_title').text
-    newsp = results.find('div', class_='rollover_description').text
-    
-    # Store scraped data into dictionary
-    scrape_mars_dict['news_title'] = news_title
-    scrape_mars_dict['newsp'] = newsp
-    
-    # Scrape Mars Weather twitter for latest weather report
-    twitter_url = 'https://twitter.com/marswxreport?lang=en'
-    twitter_response = requests.get(twitter_url)
-    twitter_soup = bs(twitter_response.text, 'lxml')
-    
-    twitter_result = twitter_soup.find('div', class_='js-tweet-text-container')
-    mars_weather = twitter_result.find('p', class_='js-tweet-text').text
-    
-    # Store scraped data into dictionary
-    scrape_mars_dict['mars_weather'] = mars_weather
+###  ###  NEWS  ###   ###
 
-    # Scrape facts about Mars from space-facts.com using Pandas read_html function
-    mars_facts_url = 'https://space-facts.com/mars/'
-    tables = pd.read_html(mars_facts_url)
-    marsfacts_df = tables[0]
-    marsfacts_df.columns = ['Description', 'Value']
-    marsfacts_df.set_index('Description', inplace=True)
+# Define URL
+news_url = 'https://mars.nasa.gov/news/'
 
-    # Export scraped table into an html script    
-    mars_facts = marsfacts_df.to_html()
-    mars_facts.replace("\n","")
-    marsfacts_df.to_html('mars_facts.html')
+# Retrieve Page
+html = requests.get(news_url)
 
-    # Store html file to dictionary
-    scrape_mars_dict['mars_facts'] = mars_facts
+# HTML Parser with Beautiful Soup
+soup = BeautifulSoup(html.text, 'html.parser')
 
-    # Call on chromedriver function to use for splinter
-    browser = init_browser()
-    
-    # Scrape Nasa for url of latest featured image of Mars
-    nasa_url = 'https://www.jpl.nasa.gov/spaceimages/?search=&category=Mars'
-    browser.visit(nasa_url)
+# Get article title & description
+news_title = results.find('div', class_='content_title').text
+news_p = soup.find('div', class_='rollover_description_inner').text
 
-    nasa_html = browser.html
-    nasa_soup = bs(nasa_html, "lxml")
+# Add to dictionary
+scrape_mars_dict['news_title'] = news_title
+scrape_mars_dict['newsp'] = news_p    
 
-    featured_image = nasa_soup.find('div', class_='default floating_text_area ms-layer').find('footer')
-    featured_image_url = 'https://www.jpl.nasa.gov'+ featured_image.find('a')['data-fancybox-href']
-    
-    # Store url to dictionary
-    scrape_mars_dict['featured_image_url'] = featured_image_url
+print("News Title & Description Retrieved")
 
-    # Scrape astrogeology.usgs.gov for urls of hemisphere images of Mars
-    hemisphere_url = 'https://astrogeology.usgs.gov/search/results?q=hemisphere+enhanced&k1=target&v1=Mars'
-    browser.visit(hemisphere_url)
+###  ###  IMAGES  ###   ###
 
-    hemisphere_html = browser.html
-    hemisphere_soup = bs(hemisphere_html, 'lxml')
-    base_url ="https://astrogeology.usgs.gov"
+# Define URL
+image_url = 'https://www.jpl.nasa.gov/spaceimages/?search=&category=Mars'
 
-    image_list = hemisphere_soup.find_all('div', class_='item')
+#Set up Splinter
+executable_path = {'executable_path': '/Users/Jill Stratton/Desktop/chromedriver/chromedriver.exe'}
+return Browser("chrome", **executable_path, headless=True)
+browser.visit(image_url)
 
-    # Create a list to store dictionary of urls and image titles
-    hemisphere_image_urls = []
+# Move through pages
+time.sleep(5)
+browser.click_link_by_partial_text('FULL IMAGE')
+time.sleep(5)
+browser.click_link_by_partial_text('more info')
+time.sleep(5)
 
-    # Loop through list of hemispheres and click on each one to find large resolution image
-    for image in image_list:
+# HTML Parser with Beautiful Soup
+image_html = browser.html
+image_soup = BeautifulSoup(image_html, 'html.parser')
 
-        # Create a dicitonary to store urls and titles
-        hemisphere_dict = {}
-        
-        # Find link to large image
-        href = image.find('a', class_='itemLink product-item')
-        link = base_url + href['href']
+# Retrieve Featured Image
+featured_image = image_soup.find('article')
+extension = featured_image.find('figure', 'lede').a['href']
+link = 'https://www.jpl.nasa.gov'
+featured_image_url = link + extension
 
-        # Visit the link
-        browser.visit(link)
+# Store url to dictionary
+scrape_mars_dict['featured_image_url'] = featured_image_url
 
-        # Wait 1 second 
-        time.sleep(1)
-        
-        # Parse the html of the new page
-        hemisphere_html2 = browser.html
-        hemisphere_soup2 = bs(hemisphere_html2, 'lxml')
+print("Featured Image Retrieved")
 
-        # Find the title
-        img_title = hemisphere_soup2.find('div', class_='content').find('h2', class_='title').text
-        
-        # Append to dict
-        hemisphere_dict['title'] = img_title
-    
-        # Find image url
-        img_url = hemisphere_soup2.find('div', class_='downloads').find('a')['href']
-        
-        # Append to dict
-        hemisphere_dict['url_img'] = img_url
-        
-        # Append dict to list
-        hemisphere_image_urls.append(hemisphere_dict)
-    
-    # Store hemisphere image urls to dictionary
-    scrape_mars_dict['hemisphere_image_urls'] = hemisphere_image_urls
+###  ###  MARS FACTS  ###   ###
 
-    return scrape_mars_dict
+#Define URL
+facts_url = 'https://space-facts.com/mars/'
+
+# HTML Parser with Beautiful Soup
+facts_html = browser.html
+facts_soup = BeautifulSoup(facts_html.text, 'html.parser')
+
+# Create dictionary to hold info
+mars_facts_dict = {}
+
+# Get Mars Facts
+facts_results = soup.find('tbody').find_all('tr')
+
+# Store Mars Facts and Create Key
+for facts_result in facts_results:
+    key = facts_result.find('td', 'column-1').text.split(":")[0]
+    value = facts_result.find('td', 'column-2').text
+    mars_facts_dict[key] = value
+
+# Create DataFrame
+mars_facts_df = pd.DataFrame([mars_facts_dict]).T.rename(columns = {0:"Value"})
+mars_facts_df.index.rename("Description", inplace = True)
+
+# Convert to HTML
+mars_facts_html = "".join(mars_facts_df.to_html().split("\n"))
+
+# Store html file to dictionary
+scrape_mars_dict['mars_facts_html'] = mars_facts_html
+
+print("Mars Facts Retrieved")
+
+###  ###  Hemispheres  ###   ###
+
+# Define URL
+hemisphere_url = 'https://astrogeology.usgs.gov/search/results?q=hemisphere+enhanced&k1=target&v1=Mars'
+
+# Create list for images
+hem_image_urls = []
+
+###  ###  WEATHER  ###   ###
+
+# Twitter Credentials
+consumer_key = "Hg0XtmbmudwdmPb2cNCdmKmxk"
+consumer_secret = "npl8cvUzLcWOceOaOLDA5TlbyoqzY838yjWg2wsCqv028MKI9m"
+access_token = "3233494312-nLivXxX2PZblH51N0eDN1bHEWBYuHlrHhZ7w5sF"
+access_token_secret = "GimjAoBhYuFSrIrXqfdiRUQasAhHPOcFML2Ew5oKpwI8a"
+
+# Use Tweepy to Authenticate Access
+auth = tweepy.OAuthHandler(consumer_key, consumer_secret)
+auth.set_access_token(access_token, access_token_secret)
+api = tweepy.API(auth, parser=tweepy.parsers.JSONParser())
+
+# Target User
+target_user = "@MarsWxReport"
+
+# Get Tweets
+tweet = api.user_timeline(target_user, count=1)[0]
+
+# Store Weather Results
+mars_weather = tweet['text']
+
+# Add to dictionary
+scrape_mars_dict["mars_weather"] = mars_weather
+
+print ("Mars Weather Retrieved")
+
+
+## ## ## First Hemisphere - Valles Marineris ## ## ##
+# Set up Splinter
+executable_path = {'executable_path': '/Users/Jill Stratton/Desktop/chromedriver/chromedriver.exe'}
+return Browser("chrome", **executable_path, headless=True)
+browser.visit(hemisphere_url)
+
+# Move through pages
+time.sleep(5)
+browser.click_link_by_partial_text('Valles Marineris Hemisphere Enhanced')
+time.sleep(5)
+
+# HTML Parser with Beautiful Soup
+hem1_html = browser.html
+hem1_soup = BeautifulSoup(hem1_html, 'html.parser')
+
+# Save the link
+hem1_link = hem1_soup.find('div', 'downloads').a['href']
+
+# Create dictionary for image
+valles_marineris = {
+    "title": "Valles Marineris Hemisphere",
+    "img_url": hem1_link
+}
+
+# Append dictionary with results
+hem_image_urls.append(valles_marineris)
+
+## ## ## Second Hemisphere - Cerberus  ## ## ##
+# Set up Splinter
+executable_path = {'executable_path': '/Users/Jill Stratton/Desktop/chromedriver/chromedriver.exe'}
+return Browser("chrome", **executable_path, headless=True)
+browser.visit(hemisphere_url)
+
+# Move through pages
+time.sleep(5)
+browser.click_link_by_partial_text('Cerberus Hemisphere Enhanced')
+time.sleep(5)
+
+# HTML Parser with Beautiful Soup
+hem2_html = browser.html
+hem2_soup = BeautifulSoup(hem2_html, 'html.parser')
+
+# Save the link
+hem2_link = hem2_soup.find('div', 'downloads').a['href']
+
+# Create dictionary for image
+cerberus = {
+    "title": "Cerberus Hemisphere",
+    "img_url": hem2_link
+}
+
+# Append dictionary with results
+hem_image_urls.append(cerberus)
+
+## ## ## Third Hemisphere - Schiaparelli ## ## ##
+# Set up Splinter
+executable_path = {'executable_path': '/Users/Jill Stratton/Desktop/chromedriver/chromedriver.exe'}
+return Browser("chrome", **executable_path, headless=True)
+browser.visit(hemisphere_url)
+
+# Move through pages
+time.sleep(5)
+browser.click_link_by_partial_text('Schiaparelli Hemisphere Enhanced')
+time.sleep(5)
+
+# HTML Parser with Beautiful Soup
+hem3_html = browser.html
+hem3_soup = BeautifulSoup(hem3_html, 'html.parser')
+
+# Save the link
+hem3_link = hem3_soup.find('div', 'downloads').a['href']
+
+# Create dictionary for image
+schiaparelli = {
+    "title": "Schiaparelli Hemisphere",
+    "img_url": hem3_link
+}
+
+# Append dictionary with results
+hem_image_urls.append(Schiaparelli)
+
+## ## ## Fourth Hemisphere - Syrtis Major ## ## ##
+# Set up Splinter
+executable_path = {'executable_path': '/Users/Jill Stratton/Desktop/chromedriver/chromedriver.exe'}
+return Browser("chrome", **executable_path, headless=True)
+browser.visit(hemisphere_url)
+
+# Move through pages
+time.sleep(5)
+browser.click_link_by_partial_text('Syrtis Major Hemisphere Enhanced')
+time.sleep(5)
+
+# HTML Parser with Beautiful Soup
+hem4_html = browser.html
+hem4_soup = BeautifulSoup(hem4_html, 'html.parser')
+
+# Save the link
+hem4_link = hem4_soup.find('div', 'downloads').a['href']
+
+# Create dictionary for image
+syrtis_major = {
+    "title": "Syrtis Major Hemisphere",
+    "img_url": hem4_link
+}
+
+# Append dictionary with results
+hem_image_urls.append(syrtis_major)
+
+# Add to Dictionary
+scrape_mars_dict[hem_image_urls] = hem_image_urls
+
+print("Hemisphere Pictures Retrieved")
+print("#########################################################")
+print("End Scraping")
+
+return scrape_mars_dict
